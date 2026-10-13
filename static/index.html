@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chess reasoner</title>
+<style>
+  :root { --ink:#101010; --paper:#e2e3de; --red:#d7282f; --muted:#6f6b64; --hair:#cfccc4;
+          --light:#f0d9b5; --dark:#b58863; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif; }
+  .bar { height:8px; background:var(--ink); }
+  .wrap { max-width:1440px; margin:0 auto; padding:20px 28px 40px; }
+  .caps { font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); }
+  header { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 24px;
+           border-top:3px solid var(--red); padding-top:14px; margin-bottom:18px; }
+  header h1 { margin:0; font-size:22px; letter-spacing:-.01em; }
+  .grid { display:grid; grid-template-columns:minmax(300px, 560px) minmax(0, 1fr); gap:32px; align-items:start; }
+  @media (max-width: 920px) { .grid { grid-template-columns:minmax(0, 1fr); } .wrap { padding:14px 16px 32px; } }
+
+  /* board */
+  .board-wrap { position:relative; width:100%; aspect-ratio:1; user-select:none; }
+  .board { display:grid; grid-template-columns:repeat(8, 1fr); grid-template-rows:repeat(8, 1fr); width:100%; height:100%;
+           border:1px solid var(--ink); }
+  .sq { position:relative; display:flex; align-items:center; justify-content:center; }
+  .sq.l { background:var(--light); } .sq.d { background:var(--dark); }
+  .sq img { width:100%; height:100%; pointer-events:none; }
+  .coord { position:absolute; font-size:10px; font-weight:600; pointer-events:none; opacity:.75; }
+  .coord.f { right:3px; bottom:1px; } .coord.r { left:3px; top:1px; }
+  .sq.l .coord { color:var(--dark); } .sq.d .coord { color:var(--light); }
+  #arrows { position:absolute; inset:1px; width:calc(100% - 2px); height:calc(100% - 2px); pointer-events:none; }
+
+  .row { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; align-items:center; }
+  input[type=text] { flex:1 1 260px; min-width:0; font:12px var(--mono); padding:8px 10px; border:1px solid var(--ink);
+                     background:#f4f4f0; color:var(--ink); }
+  button { font:10px/1 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif; letter-spacing:.12em; text-transform:uppercase;
+           padding:9px 12px; border:1px solid var(--ink); background:transparent; color:var(--ink); cursor:pointer; }
+  button:hover { background:#d6d7d1; }
+  button.go { background:var(--ink); color:var(--paper); border-color:var(--ink); padding:11px 18px; }
+  button.go:hover { background:#2a2a2a; }
+  button:disabled { opacity:.4; cursor:default; }
+  .fenrow { align-items:stretch; }                 /* the dice button takes the input's height */
+  button.dice { padding:0 10px; display:inline-flex; align-items:center; justify-content:center; }
+  button.dice svg { display:block; }               /* drawn at 1:1 so its lines are 1 px like the borders */
+  .err { color:var(--red); font-size:13px; min-height:1em; margin-top:6px; }
+
+  /* verdict */
+  .verdict { border-bottom:1px solid var(--ink); padding-bottom:12px; }
+  .vgrid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px 20px; }
+  .rule { border-top:1px solid var(--ink); margin-top:18px; }
+  .vbig { font-size:26px; font-weight:700; letter-spacing:-.01em; line-height:1.1; }
+  .vbig.red { color:var(--red); }
+  .vsub { font-size:10px; color:var(--muted); }
+  .vgrid .vsub { letter-spacing:.18em; }           /* the move-box labels match FINAL ANSWER (.caps) */
+
+  /* reasoning */
+  /* trace: one line per turn, the why then its call; outputs hidden until a call is clicked */
+  #stream { margin-top:12px; font-size:14px; line-height:1.65; }
+  .turn { padding:3px 0; overflow-wrap:anywhere; }
+  .turn .live { font:13px/1.55 var(--mono); white-space:pre-wrap; color:#3a3833; }
+  .turn code { font:12.5px var(--mono); font-weight:600; background:#f4f4f0; padding:0 5px; border:1px solid var(--hair);
+               cursor:pointer; white-space:nowrap; }
+  .turn code:hover { border-color:var(--ink); }
+  .turn .res { display:none; font:12px var(--mono); color:var(--muted); }
+  #stream.showres .turn .res { display:inline; }
+  .turn.fail, .turn.fail .res { color:var(--red); }
+  .turn.fail code { color:var(--red); border-color:var(--red); }
+  .note { font-size:13px; color:var(--muted); padding:10px 0; border-bottom:1px solid var(--hair); }
+  .answer { padding:16px 0; border-bottom:1px solid var(--ink); }
+  .answer .mv { font-size:34px; font-weight:800; color:var(--red); letter-spacing:-.01em; }
+  .answer .txt { font-size:14px; white-space:pre-wrap; overflow-wrap:anywhere; margin-bottom:8px; }
+  .summary { font-size:10px; color:var(--muted); padding-top:10px; }
+  .empty { color:var(--muted); font-size:14px; padding:24px 0; }
+  .cursor::after { content:"▍"; color:var(--red); animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<div class="wrap">
+  <header>
+    <h1 id="title">Chess reasoner</h1>
+  </header>
+  <div class="grid">
+    <section>
+      <div class="board-wrap"><div class="board" id="board"></div><svg id="arrows" viewBox="0 0 8 8"></svg></div>
+      <div class="row fenrow">
+        <input type="text" id="fen" spellcheck="false" aria-label="FEN">
+        <button class="dice" id="random" aria-label="Random position" title="Random position"><svg viewBox="0 0 19 23.2" width="19" height="23.2" aria-hidden="true"><path d="M9.5 0.5 L18.5 5.7 L18.5 17.43 L9.5 22.63 L0.5 17.43 L0.5 5.7 Z" fill="#f3f3f3"/><path d="M9.5 0.5 L18.5 5.7 L18.5 17.43 L9.5 22.63 L0.5 17.43 L0.5 5.7 Z M0.5 5.7 L9.5 10.9 L18.5 5.7 M9.5 10.9 L9.5 22.63" fill="none" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/><g fill="currentColor"><ellipse cx="2.79" cy="9.89" rx="1.48" ry="0.92" transform="rotate(63 2.79 9.89)"/><ellipse cx="7.21" cy="12.53" rx="1.48" ry="0.92" transform="rotate(63 7.21 12.53)"/><ellipse cx="5.01" cy="14.25" rx="1.48" ry="0.92" transform="rotate(63 5.01 14.25)"/><ellipse cx="2.79" cy="15.95" rx="1.48" ry="0.92" transform="rotate(63 2.79 15.95)"/><ellipse cx="7.21" cy="18.58" rx="1.48" ry="0.92" transform="rotate(63 7.21 18.58)"/><ellipse cx="11.74" cy="12.53" rx="1.48" ry="0.92" transform="rotate(117 11.74 12.53)"/><ellipse cx="16.16" cy="15.95" rx="1.48" ry="0.92" transform="rotate(117 16.16 15.95)"/><ellipse cx="9.48" cy="5.65" rx="1.45" ry="0.84"/></g></svg></button>
+      </div>
+      <div class="row">
+        <button class="go" id="analyze">Analyze</button>
+      </div>
+      <div class="err" id="err"></div>
+      <div class="rule"></div>
+    </section>
+    <section>
+      <div class="verdict" id="verdict">
+        <div class="vgrid">
+          <div><div class="vsub">MODEL MOVE</div><div class="vbig red" id="vModel">—</div></div>
+          <div><div class="vsub">CENTIPAWN LOSS</div><div class="vbig" id="vLoss">—</div></div>
+        </div>
+      </div>
+      <div id="stream"><div class="empty">Press ANALYZE to see the result</div></div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { Chess } from "./vendor/chess.js";
+
+const $ = id => document.getElementById(id);
+const TEMPERATURE = 0.6;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const S = { game: new Chess(), running: false, arrows: [], anaFen: null, answerText: null };
+
+// ------------------------------------------------------------------ board
+function render() {
+  const g = S.game, b = $("board"), files = "abcdefgh";
+  const flip = g.turn() === "b";
+  let html = "";
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const file = flip ? 7 - c : c, rank = flip ? r : 7 - r;
+    const sq = files[file] + (rank + 1), p = g.get(sq);
+    const cls = ["sq", (file + rank) % 2 ? "l" : "d"];
+    let inner = p ? `<img src="pieces/${p.color}${p.type}.png" alt="">` : "";
+    if (c === 0) inner += `<span class="coord r">${rank + 1}</span>`;
+    if (r === 7) inner += `<span class="coord f">${files[file]}</span>`;
+    html += `<div class="${cls.join(" ")}">${inner}</div>`;
+  }
+  b.innerHTML = html;
+  $("fen").value = g.fen();
+  drawArrows();
+}
+function sqXY(sq) {
+  const f = sq.charCodeAt(0) - 97, r = +sq[1] - 1;
+  return S.game.turn() === "b" ? [7 - f + .5, r + .5] : [f + .5, 7 - r + .5];
+}
+function drawArrows() {
+  $("arrows").innerHTML = `<defs><marker id="head" markerWidth="4" markerHeight="4" refX="2.2" refY="2" orient="auto" markerUnits="strokeWidth">
+     <path d="M0,0 L4,2 L0,4 z" fill="#d7282f"/></marker></defs>` +
+    S.arrows.map(a => {
+      const [x1, y1] = sqXY(a.from), [x2, y2] = sqXY(a.to);
+      const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy), k = (L - .38) / L;
+      return `<line x1="${x1}" y1="${y1}" x2="${x1 + dx * k}" y2="${y1 + dy * k}" stroke="#d7282f"
+        stroke-width=".16" stroke-linecap="round" opacity=".85" marker-end="url(#head)"/>`;
+    }).join("");
+}
+function setFen(fen) {
+  try { S.game = new Chess(fen.trim()); }
+  catch (err) { $("err").textContent = "Invalid FEN: " + err.message; return false; }
+  $("err").textContent = "";
+  clearResult(); render(); return true;
+}
+$("fen").addEventListener("blur", () => { if ($("fen").value.trim() !== S.game.fen()) setFen($("fen").value); });
+$("fen").addEventListener("keydown", e => { if (e.key === "Enter") $("fen").blur(); });
+$("random").onclick = async () => { const d = await (await fetch("/api/random")).json(); setFen(d.fen); };
+
+// ------------------------------------------------------------------ Stockfish
+const SF = { w: null, ready: null, queue: Promise.resolve() };
+function sfInit() {
+  SF.w = new Worker("vendor/stockfish-19-lite-single.js");
+  SF.ready = new Promise(res => {
+    const h = e => { if (String(e.data).startsWith("readyok")) { SF.w.removeEventListener("message", h); res(); } };
+    SF.w.addEventListener("message", h);
+  });
+  SF.w.postMessage("uci"); SF.w.postMessage("setoption name Hash value 64"); SF.w.postMessage("isready");
+}
+// one search at a time; resolves to {score: {cp} or {mate}, best: uci}
+function sfSearch(fen, opts) {
+  const run = async () => {
+    await SF.ready;
+    return new Promise(res => {
+      let last = null;
+      const h = e => {
+        const line = String(e.data);
+        if (line.startsWith("info") && line.includes(" score ") && line.includes(" pv ")) {
+          const cp = /score cp (-?\d+)/.exec(line), mate = /score mate (-?\d+)/.exec(line);
+          last = { score: mate ? { mate: +mate[1] } : { cp: +cp[1] } };
+        } else if (line.startsWith("bestmove")) {
+          SF.w.removeEventListener("message", h);
+          res({ ...last, best: line.split(/\s+/)[1] });
+        }
+      };
+      SF.w.addEventListener("message", h);
+      SF.w.postMessage("ucinewgame");
+      SF.w.postMessage("position fen " + fen);
+      SF.w.postMessage(`go depth ${opts.depth}${opts.moves ? " searchmoves " + opts.moves : ""}`);
+    });
+  };
+  const p = SF.queue.then(run, run);
+  SF.queue = p.catch(() => {});
+  return p;
+}
+
+let sfBest = null;
+function clearResult() {
+  S.arrows = []; sfBest = null;
+  $("vModel").textContent = "—";
+  $("vLoss").textContent = "—";
+}
+// Stockfish searches in the page only to score the model's answer; the model never sees its output
+function startStockfish(fen) {
+  sfBest = sfSearch(fen, { depth: 20 });
+}
+const scoreCp = s => s.mate != null ? (s.mate > 0 ? 100000 - s.mate * 100 : -100000 - s.mate * 100) : s.cp;
+async function showModelMove(fen, uci, san) {
+  $("vModel").textContent = san; $("vLoss").textContent = "…";
+  const best = await sfBest;
+  const mine = uci === best.best ? best : await sfSearch(fen, { depth: 20, moves: uci });
+  const b = best.score, m = mine.score;
+  let txt;
+  if (uci === best.best || (b.mate > 0 && m.mate > 0)) txt = "0";                  // the same move, or mates too
+  else if (b.mate != null || m.mate != null) txt = "mate";                          // misses or walks into a mate
+  else txt = String(Math.max(0, scoreCp(b) - scoreCp(m)));
+  $("vLoss").textContent = txt;
+}
+
+// ------------------------------------------------------------------ streaming
+let curTurn = null;
+function addBlock(cls, html) {
+  const d = document.createElement("div"); d.className = cls; d.innerHTML = html;
+  $("stream").appendChild(d);
+  const r = $("stream").getBoundingClientRect();
+  if (r.bottom - window.innerHeight < 400) d.scrollIntoView({ block: "nearest" });
+  return d;
+}
+function formatTurn(el, text) {
+  // "<narration> <tool>call | why: reason</tool>": narration, the why, then the call
+  const tm = /<tool>([\s\S]*?)(<\/tool>|$)/.exec(text);
+  const narr = text.split(/<tool>|<answer>/)[0].trim();
+  let html = narr ? esc(narr) + " " : "";
+  if (tm) {
+    const body = tm[1].trim(), k = body.indexOf("|");
+    const call = k >= 0 ? body.slice(0, k).trim() : body;
+    const why = k >= 0 ? body.slice(k + 1).replace(/^\s*why:\s*/i, "").trim() : "";
+    html += `${why ? esc(why) + " " : ""}<code title="show or hide the tool outputs">${esc(call)}</code><span class="res"></span>`;
+  }
+  el.querySelector(".body").innerHTML = html;
+}
+function handle(ev) {
+  switch (ev.t) {
+    case "start":
+      break;
+    case "turn":
+      curTurn = addBlock("turn", `<div class="body"><div class="live cursor"></div></div>`);
+      curTurn._text = "";
+      break;
+    case "tok": {
+      curTurn._text += ev.s;
+      curTurn.querySelector(".live").textContent = curTurn._text;
+      break;
+    }
+    case "turn_end": {
+      const isAnswer = curTurn._text.includes("<answer>");
+      if (!isAnswer) formatTurn(curTurn, curTurn._text);
+      else curTurn.remove();
+      S.answerText = isAnswer ? curTurn._text : null;
+      break;
+    }
+    case "tool": {
+      const res = curTurn.querySelector(".res");
+      if (res) res.textContent = " → " + (ev.rejected ? "why rejected: " : "") + ev.result;
+      if (ev.rejected || ev.error) curTurn.classList.add("fail");
+      break;
+    }
+    case "nudge": addBlock("note", `harness: ${esc(ev.s)}`); break;
+    case "answer": {
+      const txt = (S.answerText || "").split("<answer>")[0].trim();
+      if (ev.ok) {
+        addBlock("answer", `${txt ? `<div class="txt">${esc(txt)}</div>` : ""}<div class="caps">final answer</div><div class="mv">${esc(ev.san)}</div>`);
+        S.arrows = [{ from: ev.uci.slice(0, 2), to: ev.uci.slice(2, 4) }];
+        drawArrows();
+        showModelMove(S.anaFen, ev.uci, ev.san);
+      } else {
+        addBlock("answer", `<div class="caps">final answer</div><div class="mv">${esc(ev.raw || "—")}</div><div class="vsub">not a legal move in this position</div>`);
+      }
+      break;
+    }
+    case "error": addBlock("note", `<span style="color:var(--red)">error: ${esc(ev.s)}</span>`); break;
+    case "done": {
+      const bits = [`${ev.calls} tool calls`, `${ev.tokens.toLocaleString()} tok`, `${ev.tps ?? "—"} tok/s`];
+      addBlock("summary", (ev.ok ? "" : `<span style="color:var(--red)">${esc(ev.reason)}</span> | `) + bits.join(" | "));
+      break;
+    }
+  }
+}
+async function analyze() {
+  if (S.running) return;
+  const fen = S.game.fen();
+  if (S.game.isGameOver()) { $("err").textContent = "The game is over in this position."; return; }
+  // clear the last result and start Stockfish on the position
+  S.running = true; S.anaFen = fen;
+  $("analyze").disabled = true; $("err").textContent = "";
+  $("stream").innerHTML = ""; clearResult(); render();
+  startStockfish(fen);
+  try {
+    const r = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fen, temperature: TEMPERATURE }) });
+    if (!r.ok) { $("err").textContent = (await r.json()).error || ("HTTP " + r.status); return; }
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await rd.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (chunk.startsWith("data: ")) handle(JSON.parse(chunk.slice(6)));
+      }
+    }
+  } catch (err) {
+    $("err").textContent = "Stream failed: " + err.message;
+  } finally {
+    S.running = false; $("analyze").disabled = false;
+    document.querySelectorAll(".cursor").forEach(c => c.classList.remove("cursor"));
+  }
+}
+$("analyze").onclick = analyze;
+$("stream").addEventListener("click", e => { if (e.target.closest(".turn code")) $("stream").classList.toggle("showres"); });
+
+fetch("/api/info").then(r => r.json()).then(d => { if (d.title) { $("title").textContent = d.title; document.title = d.title; } }).catch(() => {});
+sfInit();
+// ?fen=<FEN> loads a position; &auto=1 also starts the analysis
+const QP = new URLSearchParams(location.search);
+setFen(QP.get("fen") || "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
+if (QP.get("auto") === "1") analyze();
+</script>
+</body>
+</html>
