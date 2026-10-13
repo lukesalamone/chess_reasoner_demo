@@ -64,9 +64,13 @@ You can find more information in my blog post: https://blog.lukesalamone.com/pos
 
 ## Legal
 
-- `chess.js v1.4.0` - BSD 2-Clause
-- `Stockfish.js v19` - GPLv3 (see `COPYING-stockfish.txt`)
-- `positions.txt` - Lichess CC0
-- chess pieces by [greyj](https://graphicriver.net/item/chess-pieces-/10750620)
+- `chess.js v1.4.0`
+  - BSD 2-Clause
+- `Stockfish.js v19` - GPLv3 (see `static/vendor/COPYING-stockfish.txt`).
+  - Source: [nmrugg/stockfish.js](https://github.com/nmrugg/stockfish.js), built from [Stockfish](https://github.com/official-stockfish/Stockfish)
+- `positions.txt`
+  - Lichess CC0
+- chess pieces
+  - [cburnett](https://github.com/lichess-org/lila/tree/master/public/piece/cburnett) set by [Colin M.L. Burnett](https://en.wikipedia.org/wiki/User:Cburnett) - GPLv2+ (see `static/pieces/COPYING-pieces.txt`)
 
 Everything else is [MIT Licensed](LICENSE).
