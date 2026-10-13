@@ -1,10 +1,13 @@
+
+
+
 # Chess Reasoner
 
 A small language model (0.8B parameters) that finds chess moves by using tools.
 
 The model calls tools to gather factual question about the board e.g. what pieces attack a square, which piece are hanging, what happens after Nxe5. Each tool call requires a sentence justifying the purpose of the tool call. After the model has checked candidate moves, it answers with its chosen move.
 
-<!-- demo video -->
+https://github.com/user-attachments/assets/6e328288-033e-441c-9689-ae364d27de01
 
 ## Run it
 
